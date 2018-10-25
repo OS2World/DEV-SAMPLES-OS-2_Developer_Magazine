@@ -1,0 +1,1141 @@
+#--------------------------------------------------------------------------
+# Program name:  MAKEFILE       Title:  Memory toolbox make file
+# OS/2 Developer Magazine       Issue:  Spring '93, page 127
+#
+# Article:  "Writing Memory Allocation Functions With DosSubAllocMem"
+# Author:  Larry Salomon, Jr.
+# Phone:  n/a                   Fax:  n/a
+#
+# Description:  The following is a component of the complete source to the
+# above article in the specified issue of OS/2 Developer Magazine.  This
+# source is provided AS-IS without any implied or expressed warranty.  The
+# author can be contacted via the Internet at the email address
+# "os2man@panix.com".
+#
+# This component contains the make file needed to build the memory
+# toolbox.  Before building, the following macro definitions need to be
+# changed to reflect the directory structure on your machine:
+#
+# MYLIB         - specifies the directory to copy the library into for
+#                 linking by other programs and to copy the programming
+#                 reference into.
+#
+# To build the 32-bit version, type "nmake 32bit" on any OS/2 command line.
+# To build the 16-bit version, type "nmake 16bit" on any OS/2 command line.
+#
+# Program requirements:  IBM C-Set/2 for 32-bit compilation, Microsoft
+# C 6.0 (or better) for 16-bit compilation.
+#--------------------------------------------------------------------------
+MYLIB=D:\MYLIB
+
+32BIT:
+        @NMAKE SUFFIX=32 TBMEM32.LIB
+
+16BIT:
+        @NMAKE SUFFIX=16 TBMEM16.LIB
+
+!IF "$(SUFFIX)"=="32"
+CLOPTS=-C+ -Kb+ -Ss+ -W3 -D_32BIT
+
+!IFDEF DEBUG
+CLOPTS=$(CLOPTS) -Ti+
+!ENDIF
+
+CLEXE=ICC
+LIBEXE=LIB
+!ELSE
+CLOPTS=-c -AL -W4 -G2 -D_16BIT
+
+!IFDEF DEBUG
+CLOPTS=$(CLOPTS) -Zipde -Od
+!ELSE
+CLOPTS=$(CLOPTS) -Zpe -Ol
+!ENDIF
+
+CLEXE=CL
+LIBEXE=LIB
+!ENDIF
+
+TBMEM$(SUFFIX).LIB:             TBMEM$(SUFFIX).OBJ
+        IF EXIST TBMEM$(SUFFIX).LIB DEL TBMEM$(SUFFIX).LIB
+        $(LIBEXE) @<<
+TBMEM$(SUFFIX).LIB
+Y
++ TBMEM$(SUFFIX).OBJ;
+<<
+        COPY TBMEM$(SUFFIX).LIB $(MYLIB)
+
+TBMEM$(SUFFIX).OBJ:             TBMEM.C \
+                                TBMEM.H
+        $(CLEXE) $(CLOPTS) -FoTBMEM$(SUFFIX).OBJ TBMEM.C
+
+TBMEM.INF:                      TBMEM.IPF
+        IPFC /INF TBMEM.IPF
+        COPY TBMEM.INF $(MYLIB)
+
+---------------------------------------------------------
+
+//-------------------------------------------------------------------------
+// Program name:  TBMEM.C        Title:  Memory toolbox
+// OS/2 Developer Magazine       Issue:  Spring '93, page 127
+//
+// Article:  "Writing Memory Allocation Functions With DosSubAllocMem"
+// Author:  Larry Salomon, Jr.
+// Phone:  n/a                   Fax:  n/a
+//
+// Description:  The following is a component of the complete source to the
+// above article in the specified issue of OS/2 Developer Magazine.  This
+// source is provided AS-IS without any implied or expressed warranty.  The
+// author can be contacted via the Internet at the email address
+// "os2man@panix.com".
+//
+// This component contains the implementation source for the routines
+// as described by the article.
+//
+// Program requirements:  IBM C-Set/2 for 32-bit compilation, Microsoft
+// C 6.0 (or better) for 16-bit compilation.
+//-------------------------------------------------------------------------
+#define INCL_DOSMEMMGR
+#define INCL_DOSSEMAPHORES
+#include <os2.h>
+#include <stdlib.h>
+#include <string.h>
+#include <tbheader.h>
+#include "tbmem.h"
+
+#define TBSIG_HTBMEM             MAKEULONG(TBSIG_TBMEM,0x0000)
+#define SZACTUAL(ulSzBuf)
+(ULONG)((ulSzBuf+sizeof(TBHEAPINFO))+8-((ulSzBuf+sizeof(TBHEAPINFO))%8))
+
+static PVOID myMalloc(ULONG ulSzBuf)
+//-------------------------------------------------------------------------
+// This function allocates a block of memory using the appropriate
+// system call.
+//
+// Input:  ulSzBuf - specifies the requested size of the buffer in bytes
+// Returns:  pointer to the buffer if successful, NULL otherwise
+//-------------------------------------------------------------------------
+{
+   PVOID pvBuf;
+
+#ifdef _32BIT
+   if (DosAllocMem(&pvBuf,ulSzBuf,PAG_READ|PAG_WRITE|PAG_COMMIT|OBJ_TILE)) {
+      return NULL;
+   } /* endif */
+
+   memset(pvBuf,0,ulSzBuf);
+#else
+   if (DosAllocSeg((USHORT)ulSzBuf,&SELECTOROF(pvBuf),SEG_NONSHARED)) {
+      return NULL;
+   } /* endif */
+
+   OFFSETOF(pvBuf)=0;
+
+   memset(pvBuf,0,(USHORT)ulSzBuf);
+#endif
+   return pvBuf;
+}
+
+static BOOL myFree(PVOID pvBuf)
+//-------------------------------------------------------------------------
+// This function frees the buffer.  It assumes that the buffer was
+// allocated with myMalloc().
+//
+// Input:  pvBuf - points to the buffer to free
+// Returns:  TRUE if successful, FALSE otherwise
+//-------------------------------------------------------------------------
+{
+#ifdef _32BIT
+   if (pvBuf==NULL) {
+      return FALSE;
+   } else
+   if (DosFreeMem(pvBuf)) {
+      return FALSE;
+   } else {
+      return TRUE;
+   } /* endif */
+#else
+   if (pvBuf==NULL) {
+      return FALSE;
+   } else
+   if (DosFreeSeg(SELECTOROF(pvBuf))) {
+      return FALSE;
+   } else {
+      return TRUE;
+   } /* endif */
+#endif
+}
+
+static USHORT semAccess(PTBHEADER ptbhHeader,USHORT usAction)
+//-------------------------------------------------------------------------
+// This function provides access to the specified handle via the
+// appropriate system semaphore function.
+//
+// Input:  ptbhHeader - pointer to the toolbox handle header
+//         usAction - specifies the action to take as a TBSEM_* constant
+// Returns:  TBSEM_ERROR if an error occurs, value for usAction to for
+//           next call to function otherwise
+//-------------------------------------------------------------------------
+{
+   switch (usAction) {
+   case TBSEM_SET:
+      if ((ptbhHeader->ulStatus & TBSTS_INTOOLBOX)!=0) {
+         return TBSEM_ALREADYSET;
+      } /* endif */
+
+#ifdef _32BIT
+      DosRequestMutexSem(ptbhHeader->hsmAccess,SEM_INDEFINITE_WAIT);
+#else
+      DosSemRequest(&ptbhHeader->hsmAccess,SEM_INDEFINITE_WAIT);
+      DosSemSet(&ptbhHeader->hsmAccess);
+#endif
+      ptbhHeader->ulStatus|=TBSTS_INTOOLBOX;
+      return TBSEM_CLEAR;
+   case TBSEM_CLEAR:
+      if ((ptbhHeader->ulStatus & TBSTS_INTOOLBOX)==0) {
+         return TBSEM_NOTSET;
+      } /* endif */
+
+#ifdef _32BIT
+      DosReleaseMutexSem(ptbhHeader->hsmAccess);
+#else
+      DosSemClear(&ptbhHeader->hsmAccess);
+#endif
+      ptbhHeader->ulStatus&=~TBSTS_INTOOLBOX;
+      return TBSEM_SET;
+   case TBSEM_ALREADYSET:
+      return TBSEM_NOTSET;
+   case TBSEM_NOTSET:
+      return TBSEM_ALREADYSET;
+   default:
+      return TBSEM_ERROR;
+   } /* endswitch */
+}
+
+TBERROR MemInitialize(PTBMEMINFO ptbmiInfo,PHTBMEM phtbmMem)
+//-------------------------------------------------------------------------
+// This function initializes an instance to the memory manager and
+// returns a handle to the instance.
+//
+// Input:  ptbmiInfo - pointer to the TBMEMINFO structure specifying
+//                     the desired attributes of the instance.  If this
+//                     is NULL, the defaults are used
+//         phtbmMem - pointer to the variable which receives the result.
+//                    On return, this variable contains a memory handle
+// Returns:  TBMEM_EC_* constant
+//-------------------------------------------------------------------------
+{
+   TBMEMINFO tbmiInfo;
+   ULONG ulSzBuf;
+
+   *phtbmMem=NULL;
+
+   if (ptbmiInfo!=NULL) {
+      tbmiInfo=*ptbmiInfo;
+   } else {
+      tbmiInfo.usNumHeaps=256;
+      tbmiInfo.ulSzHeap=61440;
+   } /* endif */
+
+   ulSzBuf=sizeof(TBMEM)+sizeof(TBHEAP)*(tbmiInfo.usNumHeaps-1);
+
+   *phtbmMem=myMalloc(ulSzBuf);
+   if (*phtbmMem==NULL) {
+      return TBMEM_EC_NOMEMORY;
+   } /* endif */
+
+   (*phtbmMem)->ulSig=TBSIG_HTBMEM;
+   (*phtbmMem)->ulStatus=0L;
+
+#ifdef _32BIT
+   if (DosCreateMutexSem(NULL,&(*phtbmMem)->hsmAccess,0,FALSE)) {
+      free(*phtbmMem);
+      return TBMEM_EC_INITFAILED;
+   } /* endif */
+#else
+   (*phtbmMem)->hsmAccess=0L;
+#endif
+
+   (*phtbmMem)->tbmiInfo=tbmiInfo;
+
+   return TBMEM_EC_NOERROR;
+}
+
+TBERROR MemTerminate(HTBMEM htbmMem)
+//-------------------------------------------------------------------------
+// This function destroys the memory handle specified and returns all
+// used memory to the system (via a call to MemReset()).
+//
+// Input:  htbmMem - specifies the handle to destroy
+// Returns:  TBMEM_EC_* constant
+//-------------------------------------------------------------------------
+{
+   USHORT usSemAction;
+
+   if (MemQueryHandle(htbmMem)!=TBMEM_QH_HTBMEM) {
+      return TBMEM_EC_BADHANDLE;
+   } /* endif */
+
+   usSemAction=semAccess((PTBHEADER)htbmMem,TBSEM_SET);
+
+   if (MemReset(htbmMem)!=TBMEM_EC_NOERROR) {
+      semAccess((PTBHEADER)htbmMem,usSemAction);
+      return TBMEM_EC_ERROR;
+   } /* endif */
+
+   semAccess((PTBHEADER)htbmMem,usSemAction);
+#ifdef _32BIT
+   DosCloseMutexSem(htbmMem->hsmAccess);
+#endif                           // #ifdef _32BIT
+   myFree(htbmMem);
+   return TBMEM_EC_NOERROR;
+}
+
+TBERROR MemReset(HTBMEM htbmMem)
+//-------------------------------------------------------------------------
+// This function "resets" the memory handle specified.  That is, all
+// memory currently consumed is returned to the system.
+//
+// Input:  htbmMem - specifies the handle to reset
+// Returns:  TBMEM_EC_* constant
+//-------------------------------------------------------------------------
+{
+   USHORT usSemAction;
+   USHORT usIndex;
+
+   if (MemQueryHandle(htbmMem)!=TBMEM_QH_HTBMEM) {
+      return TBMEM_EC_BADHANDLE;
+   } /* endif */
+
+   usSemAction=semAccess((PTBHEADER)htbmMem,TBSEM_SET);
+
+   for (usIndex=0; usIndex<htbmMem->tbmiInfo.usNumHeaps; usIndex++) {
+      if (htbmMem->atbhHeaps[usIndex].pvHeap!=NULL) {
+         myFree(htbmMem->atbhHeaps[usIndex].pvHeap);
+         htbmMem->atbhHeaps[usIndex].ulRef=0;
+         htbmMem->atbhHeaps[usIndex].pvHeap=NULL;
+      } /* endif */
+   } /* endfor */
+
+   semAccess((PTBHEADER)htbmMem,usSemAction);
+   return TBMEM_EC_NOERROR;
+}
+
+TBERROR MemAllocMem(HTBMEM htbmMem,ULONG ulSzBuf,PVOID *ppvBuf)
+//-------------------------------------------------------------------------
+// This function allocates a buffer of the size requested from the
+// specified memory handle.
+//
+// Input:  htbmMem - specifies the memory handle to allocate from
+//         ulSzBuf - specifies the size of the buffer
+//         ppvBuf - pointer to the variable which receives the result.  On
+//                  return, this contains a pointer to the allocated
+//                  memory
+// Returns:  TBMEM_EC_* constant
+//-------------------------------------------------------------------------
+{
+   USHORT usSemAction;
+   ULONG ulSzActual;
+   USHORT usFirstNull;
+   USHORT usIndex;
+   PTBHEAPINFO ptbhiInfo;
+   PTBHEAP ptbhHeap;
+
+   if (MemQueryHandle(htbmMem)!=TBMEM_QH_HTBMEM) {
+      return TBMEM_EC_BADHANDLE;
+   } /* endif */
+
+   usSemAction=semAccess((PTBHEADER)htbmMem,TBSEM_SET);
+   *ppvBuf=NULL;
+
+   ulSzActual=SZACTUAL(ulSzBuf);
+
+   if (ulSzActual>htbmMem->tbmiInfo.ulSzHeap-64) {
+      semAccess((PTBHEADER)htbmMem,usSemAction);
+      return TBMEM_EC_SIZETOOLARGE;
+   } /* endif */
+
+   usFirstNull=htbmMem->tbmiInfo.usNumHeaps;
+
+   for (usIndex=0; usIndex<htbmMem->tbmiInfo.usNumHeaps; usIndex++) {
+      if (htbmMem->atbhHeaps[usIndex].pvHeap!=NULL) {
+#ifdef _32BIT
+         if (!DosSubAllocMem(htbmMem->atbhHeaps[usIndex].pvHeap,
+                             (PVOID)&ptbhiInfo,
+                             ulSzActual)) {
+#else
+         if (!DosSubAlloc(SELECTOROF(htbmMem->atbhHeaps[usIndex].pvHeap),
+                          &OFFSETOF(ptbhiInfo),
+                          (USHORT)ulSzActual)) {
+
+SELECTOROF(ptbhiInfo)=SELECTOROF(htbmMem->atbhHeaps[usIndex].pvHeap);
+#endif
+            htbmMem->atbhHeaps[usIndex].ulRef++;
+
+            ptbhiInfo->ulSzRequested=ulSzBuf;
+
+            *ppvBuf=(PVOID)(ptbhiInfo+1);
+            semAccess((PTBHEADER)htbmMem,usSemAction);
+            return TBMEM_EC_NOERROR;
+         } /* endif */
+      } else
+      if (usFirstNull==htbmMem->tbmiInfo.usNumHeaps) {
+         usFirstNull=usIndex;
+      } /* endif */
+   } /* endfor */
+
+   if (usFirstNull==htbmMem->tbmiInfo.usNumHeaps) {
+      semAccess((PTBHEADER)htbmMem,usSemAction);
+      return TBMEM_EC_NOMEMORY;
+   } /* endif */
+
+   ptbhHeap=&htbmMem->atbhHeaps[usFirstNull];
+   ptbhHeap->ulRef=0;
+
+   ptbhHeap->pvHeap=myMalloc(htbmMem->tbmiInfo.ulSzHeap);
+   if (ptbhHeap->pvHeap==NULL) {
+      semAccess((PTBHEADER)htbmMem,usSemAction);
+      return TBMEM_EC_NOMEMORY;
+   } /* endif */
+
+#ifdef _32BIT
+   if (DosSubSetMem(ptbhHeap->pvHeap,
+                    DOSSUB_INIT,
+                    htbmMem->tbmiInfo.ulSzHeap)) {
+      myFree(ptbhHeap->pvHeap);
+      semAccess((PTBHEADER)htbmMem,usSemAction);
+      return TBMEM_EC_NOMEMORY;
+   } /* endif */
+
+   if (!DosSubAllocMem(ptbhHeap->pvHeap,
+                       (PVOID)&ptbhiInfo,
+                       ulSzActual)) {
+#else
+   if (DosSubSet(SELECTOROF(ptbhHeap->pvHeap),
+                 TRUE,
+                 (USHORT)htbmMem->tbmiInfo.ulSzHeap)) {
+      myFree(ptbhHeap->pvHeap);
+      semAccess((PTBHEADER)htbmMem,usSemAction);
+      return TBMEM_EC_NOMEMORY;
+   } /* endif */
+
+   if (!DosSubAlloc(SELECTOROF(ptbhHeap->pvHeap),
+                    &OFFSETOF(ptbhiInfo),
+                    (USHORT)ulSzActual)) {
+      SELECTOROF(ptbhiInfo)=SELECTOROF(ptbhHeap->pvHeap);
+#endif
+      ptbhHeap->ulRef++;
+
+      ptbhiInfo->ulSzRequested=ulSzBuf;
+
+      *ppvBuf=(PVOID)(ptbhiInfo+1);
+      semAccess((PTBHEADER)htbmMem,usSemAction);
+      return TBMEM_EC_NOERROR;
+   } else {
+      semAccess((PTBHEADER)htbmMem,usSemAction);
+      return TBMEM_EC_NOMEMORY;
+   } /* endif */
+}
+
+TBERROR MemFreeMem(HTBMEM htbmMem,PVOID pvBuf)
+//-------------------------------------------------------------------------
+// This function returns the memory to the specified memory handle.  It
+// assumes the memory was allocated using MemAllocMem().
+//
+// Input:  htbmMem - specifies the memory handle to return the memory
+//                   to
+//         pvBuf - pointer to the memory to free
+// Returns:  TBMEM_EC_* constant
+//-------------------------------------------------------------------------
+{
+   USHORT usSemAction;
+   USHORT usIndex;
+   PTBHEAPINFO ptbhiInfo;
+
+   if (MemQueryHandle(htbmMem)!=TBMEM_QH_HTBMEM) {
+      return TBMEM_EC_BADHANDLE;
+   } /* endif */
+
+   usSemAction=semAccess((PTBHEADER)htbmMem,TBSEM_SET);
+
+   for (usIndex=0; usIndex<htbmMem->tbmiInfo.usNumHeaps; usIndex++) {
+      if (SELECTOROF(htbmMem->atbhHeaps[usIndex].pvHeap)==SELECTOROF(pvBuf)) {
+         ptbhiInfo=((PTBHEAPINFO)pvBuf)-1;
+
+#ifdef _32BIT
+         if (DosSubFreeMem(htbmMem->atbhHeaps[usIndex].pvHeap,
+                           ptbhiInfo,
+                           SZACTUAL(ptbhiInfo->ulSzRequested))) {
+#else
+         if (DosSubFree(SELECTOROF(ptbhiInfo),
+                        OFFSETOF(ptbhiInfo),
+                        (USHORT)SZACTUAL(ptbhiInfo->ulSzRequested))) {
+#endif
+            semAccess((PTBHEADER)htbmMem,usSemAction);
+            return TBMEM_EC_ERROR;
+         } /* endif */
+
+         htbmMem->atbhHeaps[usIndex].ulRef--;
+
+         if (htbmMem->atbhHeaps[usIndex].ulRef==0) {
+            myFree(htbmMem->atbhHeaps[usIndex].pvHeap);
+            htbmMem->atbhHeaps[usIndex].pvHeap=NULL;
+         } /* endif */
+
+         semAccess((PTBHEADER)htbmMem,usSemAction);
+         return TBMEM_EC_NOERROR;
+      } /* endif */
+   } /* endfor */
+
+   semAccess((PTBHEADER)htbmMem,usSemAction);
+   return TBMEM_EC_BADPOINTER;
+}
+
+ULONG MemQueryMemSize(PVOID pvBuf)
+//-------------------------------------------------------------------------
+// This function returns the size of the specified buffer.
+//
+// Input:  pvBuf - pointer to the buffer to query
+// Returns:  the size of the buffer
+//-------------------------------------------------------------------------
+{
+   PTBHEAPINFO ptbhiInfo;
+
+   ptbhiInfo=((PTBHEAPINFO)pvBuf)-1;
+   return ptbhiInfo->ulSzRequested;
+}
+
+USHORT MemQueryHandle(PVOID pvHandle)
+//-------------------------------------------------------------------------
+// This function returns the type of the specified handle, if known.
+//
+// Input:  pvHandle - pointer to the handle to query
+// Returns:  TBMEM_QH_* constant
+//-------------------------------------------------------------------------
+{
+   ULONG ulSig;
+
+   if (pvHandle==NULL) {
+      return TBMEM_QH_ERROR;
+   } /* endif */
+
+   ulSig=*((PULONG)pvHandle);
+
+   if (ulSig==TBSIG_HTBMEM) {
+      return TBMEM_QH_HTBMEM;
+   } else {
+      return TBMEM_QH_ERROR;
+   } /* endif */
+}
+
+TBERROR MemQueryHandleInfo(PVOID pvHandle,PVOID pvInfo)
+//-------------------------------------------------------------------------
+// This function returns information about the specified memory handle.
+//
+// Input:  pvHandle - specifies the memory handle to query
+//         pvInfo - pointer to a TBMEMINFO structure.  On return, this
+//                  contains the attributes of the memory handle
+// Returns:  TBMEM_EC_* constant
+//-------------------------------------------------------------------------
+{
+   switch (MemQueryHandle(pvHandle)) {
+   case TBMEM_QH_HTBMEM:
+      *((PTBMEMINFO)pvInfo)=((HTBMEM)pvHandle)->tbmiInfo;
+      break;
+   default:
+      return TBMEM_EC_BADHANDLE;
+   } /* endif */
+
+   return TBMEM_EC_NOERROR;
+}
+
+---------------------------------------------------------
+
+//-------------------------------------------------------------------------
+// Program name:  TBDEFS.H       Title:  Common toolbox header file
+// OS/2 Developer Magazine       Issue:  Spring '93, page 127
+//
+// Article:  "Writing Memory Allocation Functions With DosSubAllocMem"
+// Author:  Larry Salomon, Jr.
+// Phone:  n/a                   Fax:  n/a
+//
+// Description:  The following is a component of the complete source to the
+// above article in the specified issue of OS/2 Developer Magazine.  This
+// source is provided AS-IS without any implied or expressed warranty.  The
+// author can be contacted via the Internet at the email address
+// "os2man@panix.com".
+//
+// This component contains common definitions needed by the toolbox
+// described in this article and any toolboxes described in future
+// articles.
+//
+// Program requirements:  IBM C-Set/2 for 32-bit compilation, Microsoft
+// C 6.0 (or better) for 16-bit compilation.
+//-------------------------------------------------------------------------
+#ifndef TBDEFS_INCLUDED
+#define TBDEFS_INCLUDED
+
+#ifndef OS2_INCLUDED
+
+#ifdef _32BIT
+#define PASCAL
+#define FAR
+#else
+#define PASCAL pascal
+#define FAR far
+#endif                           /* #ifdef _32BIT */
+
+#define APIENTRY PASCAL FAR
+#define EXPENTRY PASCAL FAR _loadds
+#define NULL 0L
+
+typedef unsigned short BOOL;
+typedef unsigned char BYTE;
+typedef char CHAR;
+typedef short int SHORT;
+typedef long int LONG;
+
+typedef unsigned char UCHAR;
+typedef unsigned short USHORT;
+typedef unsigned long ULONG;
+
+typedef BOOL FAR *PBOOL;
+typedef BYTE FAR *PBYTE;
+typedef CHAR FAR *PCHAR;
+typedef SHORT FAR *PSHORT;
+typedef LONG FAR *PLONG;
+
+typedef UCHAR  FAR *PUCHAR;
+typedef USHORT FAR *PUSHORT;
+typedef ULONG  FAR *PULONG;
+
+#define VOID void
+typedef VOID FAR *PVOID;
+typedef VOID FAR *LHANDLE;
+
+#endif                           /* #ifndef APIENTRY */
+
+typedef ULONG TBERROR;
+
+#endif                           /* #ifndef TBDEFS_INCLUDED */
+
+---------------------------------------------------------
+
+//-------------------------------------------------------------------------
+// Program name:  TBMEM.H        Title:  Memory toolbox header file
+// OS/2 Developer Magazine       Issue:  Spring '93, page 127
+//
+// Article:  "Writing Memory Allocation Functions With DosSubAllocMem"
+// Author:  Larry Salomon, Jr.
+// Phone:  n/a                   Fax:  n/a
+//
+// Description:  The following is a component of the complete source to the
+// above article in the specified issue of OS/2 Developer Magazine.  This
+// source is provided AS-IS without any implied or expressed warranty.  The
+// author can be contacted via the Internet at the email address
+// "os2man@panix.com".
+//
+// This component contains definitions needed by the toolbox described
+// described in this article.  All data definitions are exposed, so a
+// separate, non-exposing header file should be used for applications
+// linking with the toolbox.
+//
+// Program requirements:  IBM C-Set/2 for 32-bit compilation, Microsoft
+// C 6.0 (or better) for 16-bit compilation.
+//-------------------------------------------------------------------------
+#include <tbdefs.h>
+
+#define TBMEM_EC_NOERROR         (TBERROR)0
+#define TBMEM_EC_ERROR           (TBERROR)1
+#define TBMEM_EC_BADHANDLE       (TBERROR)2
+#define TBMEM_EC_NOMEMORY        (TBERROR)3
+#define TBMEM_EC_SIZETOOLARGE    (TBERROR)4
+#define TBMEM_EC_BADPOINTER      (TBERROR)5
+#define TBMEM_EC_INITFAILED      (TBERROR)6
+
+typedef struct _TBMEMINFO {
+   USHORT usNumHeaps;
+   ULONG ulSzHeap;
+} TBMEMINFO, FAR *PTBMEMINFO;
+
+typedef struct _TBHEAPINFO {
+   ULONG ulSzRequested;
+} TBHEAPINFO, FAR *PTBHEAPINFO;
+
+typedef struct _TBHEAP {
+   ULONG ulRef;
+   PVOID pvHeap;
+} TBHEAP, FAR *PTBHEAP;
+
+typedef struct _TBMEM {
+   ULONG ulSig;
+   ULONG ulStatus;
+   ULONG hsmAccess;
+   TBMEMINFO tbmiInfo;
+   TBHEAP atbhHeaps[1];
+} TBMEM, FAR *HTBMEM;
+typedef HTBMEM FAR *PHTBMEM;
+
+TBERROR MemInitialize(PTBMEMINFO ptbmiInfo,PHTBMEM phtbmMem);
+TBERROR MemTerminate(HTBMEM htbmMem);
+TBERROR MemReset(HTBMEM htbmMem);
+TBERROR MemAllocMem(HTBMEM htbmMem,ULONG ulSzBuf,PVOID *ppvBuf);
+TBERROR MemFreeMem(HTBMEM htbmMem,PVOID pvBuf);
+ULONG MemQueryMemSize(PVOID pvBuf);
+
+#define TBMEM_QH_ERROR           (USHORT)0
+#define TBMEM_QH_HTBMEM          (USHORT)1
+
+USHORT MemQueryHandle(PVOID pvHandle);
+TBERROR MemQueryHandleInfo(PVOID pvHandle,PVOID pvInfo);
+
+---------------------------------------------------------
+
+.*-------------------------------------------------------------------------
+.* Program name:  TBMEM.IPF      Title:  Memory toolbox programming
+.*                                       reference source
+.* OS/2 Developer Magazine       Issue:  Spring '93, page 127
+.*
+.* Article:  "Writing Memory Allocation Functions With DosSubAllocMem"
+.* Author:  Larry Salomon, Jr.
+.* Phone:  n/a                   Fax:  n/a
+.*
+.* Description:  The following is a component of the complete source to the
+.* above article in the specified issue of OS/2 Developer Magazine.  This
+.* source is provided AS-IS without any implied or expressed warranty.  The
+.* author can be contacted via the Internet at the email address
+.* "os2man@panix.com".
+.*
+.* This component contains the source - in .IPF format - for the programming
+.* reference.
+.*
+.* Program requirements:  IPFC from either the 1.3 or 2.0 toolkit
+.*-------------------------------------------------------------------------
+:userdoc.
+:title.Memory Toolbox Programming Reference
+:body.
+:h1.Introduction
+:p.The :hp2.Memory Toolbox:ehp2. (referred to as :hp2.TBMEM:ehp2.) is a
+collection of routines that provide memory-related functions for an OS/2
+application.  In addition to the standard allocation and free functions, other
+API are included which perform other tasks.  Although the API set is not
+&odq.standardized&cdq. or as complete as the C run-time library, there are a
+few reasons that you should consider when deciding which to use&colon.
+:ul compact.
+:li.It is completely thread reentrant.  No longer do you have to fumble with
+two sets of include files and libraries.
+:li.It is as fast as, or faster than, the C run-time library.
+:li.It reads better that the C run-time calls, which makes for easier program
+maintenance.
+:eul.
+:p.Granted, these are not convincing arguments that compel you to switch to
+the toolbox, but I believe they are sufficient to warrant further
+investigation.
+:p.:hp2.Using the Toolbox:ehp2.
+:p.To enable your application to use the toolbox, include the
+:hp2.TBMEM.H:ehp2. header file in the appropriate source file(s) and link with
+the :hp2.TBMEM16.LIB:ehp2. library that is also provided.
+:h1.API Reference
+:p.The following sections describe each of the following API in detail.  To
+view a particular section, double click on the corresponding API listed
+below.
+:ul compact.
+:li.:link reftype=hd refid=MAM.MemAllocMem:elink.
+:li.:link reftype=hd refid=MFM.MemFreeMem:elink.
+:li.:link reftype=hd refid=MI.MemInitialize:elink.
+:li.:link reftype=hd refid=MQH.MemQueryHandle:elink.
+:li.:link reftype=hd refid=MQHI.MemQueryHandleInfo:elink.
+:li.:link reftype=hd refid=MQMS.MemQueryMemSize:elink.
+:li.:link reftype=hd refid=MR.MemReset:elink.
+:li.:link reftype=hd refid=MT.MemTerminate:elink.
+:eul.
+:h2 id=MAM.MemAllocMem
+:p.Allocates a block of memory of a specified size.
+:xmp.
+(TBERROR)MemAllocMem(HTBMEM htbmMem,ULONG ulSzBuf,PVOID *ppvBuf);
+:exmp.
+:dl tsize=30 compact.
+:dt.htbmMem (Input)
+:dd.TBMEM instance handle
+:dt.ulSzBuf (Input)
+:dd.Size of the memory block requested
+:dt.ppvBuf (Output)
+:dd.Points to the resulting memory block that was allocated
+:edl.
+:p.:hp2.MemAllocMem:ehp2. returns one of the following values&colon.
+:sl compact.
+:li.TBMEM_EC_NOERROR
+:li.TBMEM_EC_BADHANDLE
+:li.TBMEM_EC_NOMEMORY
+:li.TBMEM_EC_SIZETOOLARGE
+:esl.
+:p.:hp2.Notes:ehp2.
+:p.The algorithm used by the toolbox is to attempt to allocate the specified
+amount of memory from those heaps which already are associated with a memory
+selector.  If the request cannot be satisfied :hp2.and:ehp2. there is at
+least one heap that is not in use, then a new selector is allocated by the
+toolbox and the memory requested is allocated from that.
+:h2 id=MFM.MemFreeMem
+:p.Frees a block of memory previously allocated with MemAllocMem.
+:xmp.
+(TBERROR)MemFreeMem(HTBMEM htbmMem,PVOID pvBuf);
+:exmp.
+:dl tsize=30 compact.
+:dt.htbmMem (Input)
+:dd.TBMEM instance handle
+:dt.pvBuf (Output)
+:dd.Pointer to the memory block to return to the system
+:edl.
+:p.:hp2.MemFreeMem:ehp2. returns one of the following values&colon.
+:sl compact.
+:li.TBMEM_EC_NOERROR
+:li.TBMEM_EC_BADHANDLE
+:li.TBMEM_EC_BADPOINTER
+:li.TBMEM_EC_ERROR
+:esl.
+:p.:hp2.Notes:ehp2.
+:p.Because of the toolbox&apos.s dynamic committal strategy, a reference count
+is maintained for each heap that is in use and it is updated whenever either
+:hp2.MemAllocMem:ehp2. or :hp2.MemFreeMem:ehp2. is called.  When this function
+determines that the reference count is zero, it returns the memory back to the
+system.
+:h2 id=MI.MemInitialize
+:p.Initializes an instance of the Memory Toolbox.
+:xmp.
+(TBERROR)MemInitialize(PTBMEMINFO ptbmiInfo,PHTBMEM phtbmMem);
+:exmp.
+:dl tsize=30 compact.
+:dt.ptbmiInfo (Input)
+:dd.Pointer to a :hp2.TBMEMINFO:ehp2. structure which describes the
+desired characteristics of the instance to be created.  If :hp2.NULL:ehp2.,
+the defaults are used.
+:dt.phtbmMem (Output)
+:dd.Points to the resulting instance that was created.
+:edl.
+:p.:hp2.MemInitialize:ehp2. returns one of the following values&colon.
+:sl compact.
+:li.TBMEM_EC_NOERROR
+:li.TBMEM_EC_NOMEMORY
+:esl.
+:p.:hp2.Notes:ehp2.
+:p.The :hp2.TBMEMINFO:ehp2. structure is described below&colon.
+:xmp.
+typedef struct _TBMEMINFO &lbrc.
+   USHORT usNumHeaps;
+   ULONG ulSzHeap;
+&rbrc. TBMEMINFO, FAR *PTBMEMINFO;
+:exmp.
+:dl tsize=20 compact.
+:dt.usNumHeaps
+:dd.Contains the number of internal heaps to be used by the toolkit.  The
+default for the 16-bit version of the toolbox is 256.
+:dt.ulSzHeaps
+:dd.Contains the size of each heap.  The default for the 16-bit version of the
+toolbox is 61440.
+:edl.
+:p.The heaps are subdivided (via calls to :hp2.MemAllocMem:ehp2. and
+:hp2.MemFreeMem:ehp2.) using the :hp2.DosSubAlloc:ehp2. and
+:hp2.DosSubFree:ehp2. API.  Allowing for housekeeping data kept by both the
+system and the toolbox, the amount of allocatable memory will be less than the
+value of :hp1.ulSzHeaps:ehp1. (how much less depends on the number of
+allocations have been made from a particular heap).
+:h2 id=MQH.MemQueryHandle
+:p.Returns the type of the specified handle.
+:xmp.
+(USHORT)MemQueryHandle(LHANDLE lhHandle);
+:exmp.
+:dl tsize=30 compact.
+:dt.lhHandle (Input)
+:dd.Specifies the handle to check
+:edl.
+:p.:hp2.MemQueryHandle:ehp2. returns one of the following values&colon.
+:sl compact.
+:li.TBMEM_QH_HTBMEM
+:li.TBMEM_QH_ERROR
+:esl.
+:p.:hp2.Notes:ehp2.
+:p.This function does not validate the accessability of the memory pointed to
+by :hp1.lhHandle:ehp1..  Thus, a value that contains an invalid selector will
+cause the application to trap.
+:h2 id=MQHI.MemQueryHandleInfo
+:p.Returns information about the specified handle.
+:xmp.
+(TBERROR)MemQueryHandleInfo(LHANDLE lhHandle,PVOID pvInfo);
+:exmp.
+:dl tsize=30 compact.
+:dt.lhHandle (Input)
+:dd.Specifies the handle to check
+:dt.pvInfo (Input/Output)
+:dd.On entry, points to a handle-specific structure to be initialized.  On
+exit, points to the initialized structure.
+:edl.
+:p.:hp2.MemQueryHandleInfo:ehp2. returns one of the following values&colon.
+:sl compact.
+:li.TBMEM_EC_NOERROR
+:li.TBMEM_EC_BADHANDLE
+:esl.
+:p.:hp2.Notes:ehp2.
+:p.What :hp1.pvInfo:ehp1. points to depends on the type of the handle
+specified.  Although in this toolbox there is only one handle type, there
+might be other toolboxes which contain several handle types; thus, this
+convention for obtaining handle information is established now to avoid
+problems in the future.
+:dl tsize=30 compact.
+:dthd.Handle type
+:ddhd.Info buffer type
+:dt.HTBMEM
+:dd.pvInfo should point to a TBMEMINFO structure
+:edl.
+:h2 id=MQMS.MemQueryMemSize
+:p.Returns the size of the specified memory block
+:xmp.
+(ULONG)MemQueryMemSize(PVOID pvBuf);
+:exmp.
+:dl tsize=30 compact.
+:dt.pvBuf (Input)
+:dd.Points to a memory block previously allocated by :hp2.MemAllocMem:ehp2.
+:edl.
+:p.:hp2.MemQueryMemSize:ehp2. returns the size of the memory block specified.
+:p.:hp2.Notes:ehp2.
+:p.This function does no validity checks to insure that :hp1.pvBuf:ehp1. was
+indeed allocated with :hp2.MemAllocMem:ehp2..
+:h2 id=MR.MemReset
+:p.Resets the specified instance of the Memory Toolbox to its starting state.
+:xmp.
+(TBERROR)MemReset(HTBMEM htbmMem);
+:exmp.
+:dl tsize=30 compact.
+:dt.htbmMem (Input)
+:dd.TBMEM instance handle
+:edl.
+:p.:hp2.MemReset:ehp2. returns one of the following values&colon.
+:sl compact.
+:li.TBMEM_EC_NOERROR
+:li.TBMEM_EC_BADHANDLE
+:esl.
+:p.:hp2.Notes:ehp2.
+:p.This function returns :hp2.all:ehp2. memory to the system and reinitializes
+all of the internal heaps to their stating state.
+:h2 id=MT.MemTerminate
+:p.Terminates the specified instance of the Memory Toolbox.
+:xmp.
+(TBERROR)MemTerminate(HTBMEM htbmMem);
+:exmp.
+:dl tsize=30 compact.
+:dt.htbmMem (Input)
+:dd.TBMEM instance handle
+:edl.
+:p.:hp2.MemTerminate:ehp2. returns one of the following values&colon.
+:sl compact.
+:li.TBMEM_EC_NOERROR
+:li.TBMEM_EC_BADHANDLE
+:li.TBMEM_EC_ERROR
+:esl.
+:p.:hp2.Notes:ehp2.
+:p.This function first calls :hp2.MemReset:ehp2. to return all allocated
+memory to the system.
+:euserdoc.
+
+---------------------------------------------------------
+
+#--------------------------------------------------------------------------
+# Program name:  TEST.MAK       Title:  Memory toolbox make file
+# OS/2 Developer Magazine       Issue:  Spring '93, page 127
+#
+# Article:  "Writing Memory Allocation Functions With DosSubAllocMem"
+# Author:  Larry Salomon, Jr.
+# Phone:  n/a                   Fax:  n/a
+#
+# Description:  The following is a component of the complete source to the
+# above article in the specified issue of OS/2 Developer Magazine.  This
+# source is provided AS-IS without any implied or expressed warranty.  The
+# author can be contacted via the Internet at the email address
+# "os2man@panix.com".
+#
+# This component contains the make file needed to build the memory
+# toolbox test file. To build the 32-bit version, type "nmake 32bit TEST=MEM"
+# on any OS/2 command line.  To build the 16-bit version, type
+# "nmake 16bit TEST=MEM" on any OS/2 command line.
+#
+# Program requirements:  IBM C-Set/2 for 32-bit compilation, Microsoft
+# C 6.0 (or better) for 16-bit compilation.
+#--------------------------------------------------------------------------
+
+!IFNDEF TEST
+!ERROR You must define TEST!
+!ENDIF
+
+32BIT:
+        NMAKE SUFFIX=32 $(TEST)32.EXE
+
+16BIT:
+        NMAKE SUFFIX=16 $(TEST)16.EXE
+
+!IF "$(SUFFIX)"=="32"
+CLOPTS=-C+ -Kb+ -Ss+ -W3 -D_32BIT
+LINKOPTS=/MAP
+
+!IFDEF DEBUG
+CLOPTS=$(CLOPTS) -Ti+
+LINKOPTS=$(LINKOPTS) /CO
+!ENDIF
+
+CLEXE=ICC
+LINKEXE=LINK386
+OS2LIB=OS2386
+!ELSE
+CLOPTS=-c -AL -W4 -G2 -D_16BIT
+LINKOPTS=/MAP
+
+!IFDEF DEBUG
+CLOPTS=$(CLOPTS) -Zipde -Od
+LINKOPTS=$(LINKOPTS) /CO
+!ELSE
+CLOPTS=$(CLOPTS) -Zpe -Ol
+!ENDIF
+
+CLEXE=CL
+LINKEXE=LINK
+OS2LIB=OS2
+!ENDIF
+
+$(TEST)$(SUFFIX).EXE:           $(TEST)$(SUFFIX).OBJ
+        ECHO NAME $(TEST)$(SUFFIX) > TEST.DEF
+        TYPE TESTEND.DEF >> TEST.DEF
+        $(LINKEXE) $(LINKOPTS) @<<
+$(TEST)$(SUFFIX)
+$(TEST)$(SUFFIX)
+$(TEST)$(SUFFIX)
+$(OS2LIB)+TBMEM$(SUFFIX)
+TEST
+<<
+
+$(TEST)$(SUFFIX).OBJ:           $(TEST).C
+        $(CLEXE) $(CLOPTS) -Fo$(TEST)$(SUFFIX) $(TEST).C
+
+---------------------------------------------------------
+
+//-------------------------------------------------------------------------
+// Program name:  MEM.C          Title:  Memory toolbox test application
+// OS/2 Developer Magazine       Issue:  Spring '93, page 127
+//
+// Article:  "Writing Memory Allocation Functions With DosSubAllocMem"
+// Author:  Larry Salomon, Jr.
+// Phone:  n/a                   Fax:  n/a
+//
+// Description:  The following is a component of the complete source to the
+// above article in the specified issue of OS/2 Developer Magazine.  This
+// source is provided AS-IS without any implied or expressed warranty.  The
+// author can be contacted via the Internet at the email address
+// "os2man@panix.com".
+//
+// This component contains a program written to test the TBMEM library.
+// It iterates 200 times through a loop which picks a random number and,
+// if the pointer stored at that index in an array is NULL, allocates a
+// 30000 byte block of memory.  If the pointer stored is not NULL, it
+// calls MemQueryMemSize() and compares the result with the size stored
+// on the allocation call.  It then calls MemFree().
+//
+// Program requirements:  IBM C-Set/2 for 32-bit compilation, Microsoft
+// C 6.0 (or better) for 16-bit compilation.
+//-------------------------------------------------------------------------
+#include <tbmem.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#define MAX_INFO                 100
+
+typedef struct {
+   ULONG ulSzBuf;
+   PVOID pvBuf;
+} MEMINFO, FAR *PMEMINFO;
+
+MEMINFO amiInfo[MAX_INFO];
+
+VOID main(USHORT usArgs,PCHAR apchArgs[])
+{
+   HTBMEM htbmMem;
+   USHORT usSeed;
+   USHORT usIndex;
+
+   if (usArgs==1) {
+      puts("Syntax: MEM1 seed");
+      return;
+   } /* endif */
+
+   memset(amiInfo,0,sizeof(amiInfo));
+   srand(atoi(apchArgs[1]));
+   usSeed=rand()%MAX_INFO;
+
+   if (MemInitialize(NULL,&htbmMem)!=TBMEM_EC_NOERROR) {
+      printf("\nInitialize error.\n");
+      return;
+   } /* endif */
+
+   printf("Testing memory allocation/free.  Using starting slot %d.\n\n",
+          usSeed);
+
+   for (usIndex=0; usIndex<200; usIndex++) {
+      printf("Slot=%3d, ",usSeed);
+
+      if (amiInfo[usSeed].pvBuf==NULL) {
+         amiInfo[usSeed].ulSzBuf=30000;
+
+         if (MemAllocMem(htbmMem,
+                         amiInfo[usSeed].ulSzBuf,
+                         &amiInfo[usSeed].pvBuf)!=TBMEM_EC_NOERROR) {
+            printf("allocation error.\n");
+         } else {
+            printf("allocation successful.\n");
+         } /* endif */
+      } else {
+         if (MemQueryMemSize(amiInfo[usSeed].pvBuf)!=amiInfo[usSeed].ulSzBuf) {
+            printf("verify error.\n");
+         } else
+         if (MemFreeMem(htbmMem,amiInfo[usSeed].pvBuf)!=TBMEM_EC_NOERROR) {
+            printf("free error.\n");
+         } else {
+            amiInfo[usSeed].pvBuf=NULL;
+            printf("verify and free successful.\n");
+         } /* endif */
+      } /* endif */
+
+      usSeed=rand()%MAX_INFO;
+   } /* endfor */
+
+   if (MemTerminate(htbmMem)!=TBMEM_EC_NOERROR) {
+      printf("\nTermination error.\n");
+   } /* endif */
+}
+
+---------------------------------------------------------
+
+;--------------------------------------------------------------------------
+; Program name:  TESTEND.DEF    Title:  Memory toolbox test application
+; OS/2 Developer Magazine       Issue:  Spring '93, page 127
+;
+; Article:  "Writing Memory Allocation Functions With DosSubAllocMem"
+; Author:  Larry Salomon, Jr.
+; Phone:  n/a                   Fax:  n/a
+;
+; Description:  The following is a component of the complete source to the
+; above article in the specified issue of OS/2 Developer Magazine.  This
+; source is provided AS-IS without any implied or expressed warranty.  The
+; author can be contacted via the Internet at the email address
+; "os2man@panix.com".
+;
+; This component contains the tail of the module definition file used
+; by the toolbox test programs.  The NAME statement is prepended by the
+; TEST.MAK makefile.
+;
+; Program requirements:  IBM C-Set/2 for 32-bit compilation, Microsoft
+; C 6.0 (or better) for 16-bit compilation.
+;--------------------------------------------------------------------------
+DESCRIPTION 'Test program for a toolbox component
+Written by Larry Salomon, Jr.
+All rights reserved.'
+
+PROTMODE
+STACKSIZE 0x8000
+
