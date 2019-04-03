@@ -1,0 +1,164 @@
+
+ wastebsk
+
+ Start         Length     Name                   Class
+ 0001:00000000 000001714H CODE32                 CODE 32-bit
+ 0002:00000000 000000004H DDE4_DATA32            DATA 32-bit
+ 0003:00000000 000000DCCH DATA32                 DATA 32-bit
+ 0003:00000DCC 000000000H CONST32                CONST 32-bit
+ 0003:00000DCC 000000000H BSS32                  BSS 32-bit
+ 0003:00000DCC 000000010H c_common               BSS 32-bit
+
+ Origin   Group
+ 0003:0   DGROUP
+ 0000:0   FLAT
+
+ Address       Export                  Alias
+
+ 0003:0000001C M_WPWasteBsktCClassData  M_WPWasteBsktCClassData
+ 0003:00000018 M_WPWasteBsktClassData  M_WPWasteBsktClassData
+ 0001:0000082C M_WPWasteBsktNewClass   M_WPWasteBsktNewClass
+ 0003:00000010 WPWasteBsktCClassData   WPWasteBsktCClassData
+ 0003:00000004 WPWasteBsktClassData    WPWasteBsktClassData
+ 0001:0000043C WPWasteBsktNewClass     WPWasteBsktNewClass
+
+  Address         Publics by Name
+
+ 0003:00000DCC       @BSSWASTEBSK.C
+ 0001:0000150C       AutoEmptyDlgProc
+ 0003:00000000       DefaultClassTitle
+ 0000:00000000  Imp  DOS32FLATTOSEL       (DOSCALLS.425)
+ 0000:00000000  Imp  DOS32SELTOFLAT       (DOSCALLS.426)
+ 0000:00000000  Imp  DosFreeModule        (DOSCALLS.322)
+ 0000:00000000  Imp  DosLoadModule        (DOSCALLS.318)
+ 0000:00000000  Imp  DrgQueryDragitemPtr  (PMDRAG.46)
+ 0003:00000DD8       hIcon
+ 0003:00000DD4       hmodThisClass
+ 0000:00000000  Imp  M_WPFolderNewClass   (PMWP.315)
+ 0000:00000000  Imp  M_WPObjectClassData  (PMWP.323)
+ 0003:0000001C       M_WPWasteBsktCClassData
+ 0003:00000018       M_WPWasteBsktClassData
+ 0001:0000082C       M_WPWasteBsktNewClass
+ 0000:00000000  Imp  SOMClassClassData    (som.3)
+ 0000:00000000  Imp  SOMClassMgrClassData (som.6)
+ 0000:00000000  Imp  SOMClassMgrObject    (som.7)
+ 0000:00000000  Imp  somConstructClass    (som.28)
+ 0000:00000000  Imp  somDataResolve       (som.47)
+ 0000:00000000  Imp  somEnvironmentNew    (som.30)
+ 0000:00000000  Imp  SOMError             (som.9)
+ 0000:00000000  Imp  somIdFromString      (som.31)
+ 0000:00000000  Imp  SOMObjectCClassData  (som.13)
+ 0000:00000000  Imp  SOMObjectClassData   (som.14)
+ 0000:00000000  Imp  somParentResolve     (som.33)
+ 0000:00000000  Imp  somPrintf            (som.35)
+ 0000:00000000  Imp  somResolve           (som.37)
+ 0000:00000000  Imp  somTestCls           (som.42)
+ 0000:00000000  Imp  SOM_TraceLevel       (som.18)
+ 0001:000016E8       strcmp
+ 0000:00000000  Imp  WinDefDlgProc        (PMWIN.910)
+ 0000:00000000  Imp  WinDestroyPointer    (PMWIN.727)
+ 0000:00000000  Imp  WinLoadPointer       (PMWIN.780)
+ 0000:00000000  Imp  WinQueryWindowULong  (PMWIN.843)
+ 0000:00000000  Imp  WinSendDlgItemMsg    (PMWIN.903)
+ 0000:00000000  Imp  WinSetWindowULong    (PMWIN.878)
+ 0000:00000000  Imp  WPFolderClassData    (PMWP.14)
+ 0000:00000000  Imp  WPFolderNewClass     (PMWP.15)
+ 0000:00000000  Imp  WPObjectClassData    (PMWP.23)
+ 0003:00000010       WPWasteBsktCClassData
+ 0003:00000004       WPWasteBsktClassData
+ 0001:000013D4       wpwastebsktcls_wpclsInitData
+ 0001:0000145C       wpwastebsktcls_wpclsQueryIcon
+ 0001:00001394       wpwastebsktcls_wpclsQueryTitle
+ 0001:0000149C       wpwastebsktcls_wpclsUnInitData
+ 0001:0000043C       WPWasteBsktNewClass
+ 0001:0000097C       wpwastebskt_QueryAutoEmptyFlag
+ 0001:000009CC       wpwastebskt_SetAutoEmptyFlag
+ 0001:00001210       wpwastebskt_wpAddFolderIncludePage
+ 0001:00001264       wpwastebskt_wpAddSettingsPages
+ 0001:000010A0       wpwastebskt_wpDragOver
+ 0001:00000A24       wpwastebskt_wpInitData
+ 0001:00000B94       wpwastebskt_wpMenuItemSelected
+ 0001:00000AAC       wpwastebskt_wpModifyPopupMenu
+ 0001:00001044       wpwastebskt_wpQueryStyle
+ 0001:00000ED8       wpwastebskt_wpRestoreState
+ 0001:00000DC4       wpwastebskt_wpSaveState
+ 0001:00000C5C       wpwastebskt_wpSetup
+ 0002:00000000       _dllentry
+ 0001:0000170C       _DLL_InitTerm
+ 0001:000016E0       _DosFlatToSel
+ 0001:000016D8       _DosSelToFlat
+ 0003:00000DCC       _edata
+ 0003:00000DDC       _end
+
+  Address         Publics by Value
+
+ 0000:00000000  Imp  DOS32SELTOFLAT       (DOSCALLS.426)
+ 0000:00000000  Imp  WPFolderClassData    (PMWP.14)
+ 0000:00000000  Imp  SOMClassMgrClassData (som.6)
+ 0000:00000000  Imp  somResolve           (som.37)
+ 0000:00000000  Imp  SOMError             (som.9)
+ 0000:00000000  Imp  WinSetWindowULong    (PMWIN.878)
+ 0000:00000000  Imp  WinQueryWindowULong  (PMWIN.843)
+ 0000:00000000  Imp  DosFreeModule        (DOSCALLS.322)
+ 0000:00000000  Imp  WinSendDlgItemMsg    (PMWIN.903)
+ 0000:00000000  Imp  DosLoadModule        (DOSCALLS.318)
+ 0000:00000000  Imp  somTestCls           (som.42)
+ 0000:00000000  Imp  WPObjectClassData    (PMWP.23)
+ 0000:00000000  Imp  DOS32FLATTOSEL       (DOSCALLS.425)
+ 0000:00000000  Imp  SOMClassMgrObject    (som.7)
+ 0000:00000000  Imp  somConstructClass    (som.28)
+ 0000:00000000  Imp  WinDestroyPointer    (PMWIN.727)
+ 0000:00000000  Imp  SOM_TraceLevel       (som.18)
+ 0000:00000000  Imp  somEnvironmentNew    (som.30)
+ 0000:00000000  Imp  DrgQueryDragitemPtr  (PMDRAG.46)
+ 0000:00000000  Imp  somPrintf            (som.35)
+ 0000:00000000  Imp  WPFolderNewClass     (PMWP.15)
+ 0000:00000000  Imp  WinDefDlgProc        (PMWIN.910)
+ 0000:00000000  Imp  SOMObjectClassData   (som.14)
+ 0000:00000000  Imp  M_WPFolderNewClass   (PMWP.315)
+ 0000:00000000  Imp  somIdFromString      (som.31)
+ 0000:00000000  Imp  SOMObjectCClassData  (som.13)
+ 0000:00000000  Imp  somParentResolve     (som.33)
+ 0000:00000000  Imp  WinLoadPointer       (PMWIN.780)
+ 0000:00000000  Imp  SOMClassClassData    (som.3)
+ 0000:00000000  Imp  somDataResolve       (som.47)
+ 0000:00000000  Imp  M_WPObjectClassData  (PMWP.323)
+ 0001:0000043C       WPWasteBsktNewClass
+ 0001:0000082C       M_WPWasteBsktNewClass
+ 0001:0000097C       wpwastebskt_QueryAutoEmptyFlag
+ 0001:000009CC       wpwastebskt_SetAutoEmptyFlag
+ 0001:00000A24       wpwastebskt_wpInitData
+ 0001:00000AAC       wpwastebskt_wpModifyPopupMenu
+ 0001:00000B94       wpwastebskt_wpMenuItemSelected
+ 0001:00000C5C       wpwastebskt_wpSetup
+ 0001:00000DC4       wpwastebskt_wpSaveState
+ 0001:00000ED8       wpwastebskt_wpRestoreState
+ 0001:00001044       wpwastebskt_wpQueryStyle
+ 0001:000010A0       wpwastebskt_wpDragOver
+ 0001:00001210       wpwastebskt_wpAddFolderIncludePage
+ 0001:00001264       wpwastebskt_wpAddSettingsPages
+ 0001:00001394       wpwastebsktcls_wpclsQueryTitle
+ 0001:000013D4       wpwastebsktcls_wpclsInitData
+ 0001:0000145C       wpwastebsktcls_wpclsQueryIcon
+ 0001:0000149C       wpwastebsktcls_wpclsUnInitData
+ 0001:0000150C       AutoEmptyDlgProc
+ 0001:000016D8       _DosSelToFlat
+ 0001:000016E0       _DosFlatToSel
+ 0001:000016E8       strcmp
+ 0001:0000170C       _DLL_InitTerm
+ 0002:00000000       _dllentry
+ 0003:00000000       DefaultClassTitle
+ 0003:00000004       WPWasteBsktClassData
+ 0003:00000010       WPWasteBsktCClassData
+ 0003:00000018       M_WPWasteBsktClassData
+ 0003:0000001C       M_WPWasteBsktCClassData
+ 0003:00000DCC       @BSSWASTEBSK.C
+ 0003:00000DCC       _edata
+ 0003:00000DD4       hmodThisClass
+ 0003:00000DD8       hIcon
+ 0003:00000DDC       _end
+
+Program entry point at 0001:170C
+
+wastebsk.obj(WASTEBSK.C) : error L2029: 'wpwastebskt_wpDrop' : unresolved external
+

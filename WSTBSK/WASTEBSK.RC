@@ -1,0 +1,23 @@
+#define INCL_WIN
+#define  INCL_WINSTDSPIN
+#include <os2.h>
+
+#include "dialog.h"
+
+ICON  ID_WASTEICO    WASTEBSK.ICO
+
+MENU ID_CXTMENU_WASTE LOADONCALL MOVEABLE DISCARDABLE
+BEGIN
+   MENUITEM "~Empty now", IDM_EMPTY
+END
+
+DLGTEMPLATE ID_DLG_AUTOEMPTY LOADONCALL MOVEABLE DISCARDABLE
+BEGIN
+    DIALOG  "", 100, 10, 7, 148, 84, NOT FS_DLGBORDER | WS_VISIBLE
+    BEGIN
+        LTEXT           "Will empty upon system startup", -1, 20, 70, 140, 8
+        AUTOCHECKBOX    "~Automatic emptying", ID_CB_AUTO, 20, 49, 91, 10
+    END
+END
+
+

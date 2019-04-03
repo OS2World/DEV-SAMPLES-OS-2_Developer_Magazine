@@ -1,0 +1,2 @@
+nmake wastebsk.mak > err
+
